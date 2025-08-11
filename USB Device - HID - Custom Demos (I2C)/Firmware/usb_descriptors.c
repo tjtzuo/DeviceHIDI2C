@@ -260,11 +260,13 @@ ROM struct{BYTE report[HID_RPT01_SIZE];}hid_rpt01={
 
 	// The Input report
 	0x09, 0x03,				// Usage ID - vendor defined
+//	0x19, 0x01,				//		Usage Minimum
+//	0x29, 0x40,				//		Usage Maximum	//64 input usages total (0x01 to 0x40)
 	0x15, 0x00,				//		Logical Minimum (data bytes in the report may have minimum value = 0x00)
 	0x26, 0xFF, 0x00,		//		Logical Maximum (data bytes in the report may have maximum value = 0x00FF = unsigned 255)
 	0x75, 0x08,				//		Report Size: 8-bit field size
 	0x95, 0x40,				//		Report Count: Make sixty-four 8-bit fields (the next time the parser hits an "Input", "Output", or "Feature" item)
-	0x81, 0x02,				//		Input (Data, Array, Abs): Instantiates input packet fields based on the above report size, count, logical min/max, and usage.
+	0x81, 0x02,				//		Input (Data, Variable, Abs): Instantiates input packet fields based on the above report size, count, logical min/max, and usage.
 
 	// The Output report
 	0x09, 0x04,				// Usage ID - vendor defined
@@ -272,7 +274,9 @@ ROM struct{BYTE report[HID_RPT01_SIZE];}hid_rpt01={
 	0x26, 0xFF, 0x00,		//		Logical Maximum (255)
 	0x75, 0x08,				//		Report Size (8 bits)
 	0x95, 0x40,				//		Report Count (64 fields)
-	0x91, 0x02,				//		Output (Data, Array, Abs): Instantiates output packet fields.  Uses same report size and count as "Input" fields, since nothing new/different was specified to the parser since the "Input" item.
+//	0x19, 0x01,				//		Usage Minimum
+//	0x29, 0x40,				//		Usage Maximum	//64 output usages total (0x01 to 0x40)
+	0x91, 0x02,				//		Output (Data, Variable, Abs): Instantiates output packet fields.  Uses same report size and count as "Input" fields, since nothing new/different was specified to the parser since the "Input" item.
 	0xC0
 	}	// End Collection
 };
