@@ -42,37 +42,39 @@
 #define MINOR_VERSION	0x00	//Demo Version 1.00
 #define MAJOR_VERSION	0x01
 
-/* Temperature Mode */
-#define TEMP_REAL_TIME	0x00
-#define TEMP_LOGGING	0x01
+#define C_I2C_timeout	4000
+#define C_I2C_BR		0xA0 //0x80
+
+/*          EEPROM Address          */
+#define EEP_I2C_timeout	0x08
+#define EEP_I2C_BR		0x0A
+
 
 typedef enum
 {
 	READ_VERSION	= 0x00,
-/*
-	READ_FLASH		= 0x01,
-	WRITE_FLASH		= 0x02,
-	ERASE_FLASH		= 0x03,
-	READ_EEDATA		= 0x04,
-	WRITE_EEDATA	= 0x05,
-	READ_CONFIG		= 0x06,
-	WRITE_CONFIG	= 0x07,
 
-	SPI_Write		= 0x10,
-	SPI_Read		= 0x11,
-
-	ID_BOARD		= 0x31,
-	UPDATE_LED		= 0x32,
-	SET_TEMP_REAL	= 0x33,
-	RD_TEMP			= 0x34,
-	SET_TEMP_LOGGING= 0x35,
-	RD_TEMP_LOGGING = 0x36,
-*/
 	RD_POT			= 0x37,
 
+    I2C_Write		= 0x40,
+    I2C_Read		= 0x41,    
+    I2C_Test		= 0x42,
+    I2C_BlockWrite	= 0x43,
+    I2C_BlockRead	= 0x44,
+    I2C_WriteRead	= 0x45,
+    I2C_Read2		= 0x46,    
+
 	IO_CTL			= 0xF1,
+    IO_Test			= 0xF2,
 	RESET			= 0xFF
 }TYPE_CMD;
+
+typedef enum
+{
+	I2C_NAK				= 0,
+	I2C_ACK				= 1,
+	I2C_TIMEOUT			= 2
+}IIC_STATE;
 
 #define USBGEN_EP_SIZE          64
 
@@ -106,11 +108,38 @@ typedef union DATA_PACKET
 */
 } DATA_PACKET;
 
+typedef struct IIC_PACKET
+{
+	BYTE adr;
+	BYTE cmd;
+	BYTE sts;
+	BYTE len;
+	BYTE data[34];
+}IIC_PACKET;
+
+
 /** P U B L I C	 P R O T O T Y P E S *****************************************/
 void UserInit(void);
 void ProcessIO(void);
-/*
-extern volatile unsigned char usbgen_out[USBGEN_EP_SIZE];
-extern volatile unsigned char usbgen_in[USBGEN_EP_SIZE];
-*/
+
+unsigned char Read_b_eep( unsigned int badd );
+void Write_b_eep( unsigned int badd,unsigned char bdata );
+
+BOOL Transmit(void);
+BOOL Receive(void);
+BOOL Write_BYTE_TO_I2C(unsigned char data_out);
+BOOL Read_BYTE_FROM_I2C(unsigned char* buf);
+BOOL Read_PAGE_FROM_I2C(void);
+BOOL EE_Write(unsigned int address,unsigned char* buf);
+BOOL EE_Read(unsigned int address,unsigned char* buf);
+void FL_FlashLED(BOOL bON);
+BOOL Get_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);
+BOOL Set_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);
+void Set_InterCMD(IIC_PACKET* iic,BYTE cmd,unsigned int value);
+void Test_I2CFlow(void);
+BOOL IIC_GPIO_Read(IIC_PACKET* iic);
+BOOL IIC_Read(IIC_PACKET* iic);
+BOOL IIC_Read2(IIC_PACKET* iic);
+
+
 #endif //PICDEM_FS_DEMO_H

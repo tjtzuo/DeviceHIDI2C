@@ -46,33 +46,38 @@
 #include "USB/usb_function_hid.h"
 #include "HardwareProfile.h"
 #include "user.h"
+#include "protocol_io.h"
 /*
-#if defined(__18CXX)
-	#include <spi.h>
-#endif
-*/
+//#define SLAVE_ADDR	0x16
+#define SLAVE_ADDR	0xAA
 
+// bq27541
+#define SBS_TEMP	0x06
+#define SBS_VOLT	0x08
+#define SBS_CURR	0x14
+*/
 /** V A R I A B L E S ********************************************************/
 #if defined(__18CXX)
 	#pragma udata
 #endif
 
-BYTE old_sw2,old_sw3;
 BYTE counter;
-BYTE trf_state;
-BYTE temp_mode;
-
-BYTE pTemp;						// Pointer to current logging position, will
-								// loop to zero once the max index is reached
-BYTE valid_temp;				// Keeps count of the valid data points
-WORD temp_data[30];				// 30 points of data
-
 BOOL blinkStatusValid = TRUE;
 
 // Begin Generic Hid specific
 char usb_state = 'r';
 // End Generic Hid specific
 
+BYTE tranlength;
+BYTE eeadr;
+BYTE testFlow;
+BYTE DownLoadFlow;
+BYTE ErrorCode;
+BOOL i2cHang;
+WORD i2cTimeout;
+BOOL bClkTrim;
+BOOL bWriteBusy;
+BOOL bTestFlow;
 
 extern USB_HANDLE USBOutHandle;
 extern USB_HANDLE USBInHandle;
@@ -94,9 +99,6 @@ extern DATA_PACKET ToSendDataBuffer;
 
 /** PRIVATE PROTOTYPES *********************************************/
 void BlinkUSBStatus(void);
-BOOL Switch2IsPressed(void);
-BOOL Switch3IsPressed(void);
-void ResetTempLog(void);
 WORD_VAL ReadPOT(void);
 void ServiceRequests(void);
 
@@ -105,6 +107,67 @@ void ServiceRequests(void);
 #if defined(__18CXX)
 	#pragma code
 #endif
+
+#define M_TMR0_ON	T0CONbits.TMR0ON = 1; // enable timer 0
+#define M_TMR0_OFF	T0CONbits.TMR0ON = 0; // disable timer 0
+
+void SetTimer0(void)
+{
+	T0CONbits.T08BIT = 0; // 16 bit counter
+	T0CONbits.T0CS = 0; // internal clock
+	T0CONbits.T0SE = 0; // low-to-high edge
+	T0CONbits.PSA = 1; // Prescale
+	//T0CON |= 0x02; // 1:8
+	//T0CON |= 0x01; // 1:4
+
+	TMR0H = 0;
+	TMR0L = 0;
+
+	INTCONbits.T0IE = 0; // mask interrupt
+	INTCONbits.T0IF = 0; // clear overflow flag
+}
+
+void OpenT1(void)
+{
+	T1CONbits.RD16 = 1; // 16 bit counter
+
+	//T1CONbits.TMR1CS = 0; // internal clock, Focs/4
+	//T1CONbits.T1OSCEN = 0; // Timer1 Oscillator shut off
+	//T1CONbits.T1SYNC = 0; // Timer1 External Clock Input Synchronization Select bit
+	//T1CON |= 0x30; // 1:8
+	T1CON |= 0x20; // 1:4
+	PIR1bits.TMR1IF = 0;
+}
+
+void OpenT3(void)
+{
+	T3CONbits.RD16 = 1; // 16 bit counter
+	T3CON |= 0x20; // 1:4
+	PIR2bits.TMR3IF = 0;
+}
+
+void SetT1(unsigned int time)
+{
+	unsigned int t1 = 0xFFFF;
+	t1 = t1 - time;
+	TMR1H = t1/256;
+	TMR1L = t1%256;
+	PIR1bits.TMR1IF = 0;
+
+	T1CONbits.TMR1ON = 1;
+}
+
+void SetT3(unsigned int time)
+{
+	unsigned int t3 = 0xFFFF;
+	t3 = t3 - time;
+	TMR3H = t3/256;
+	TMR3L = t3%256;
+	PIR2bits.TMR3IF = 0;
+
+	T3CONbits.TMR3ON = 1;
+}
+
 
 /******************************************************************************
  * Function:		void UserInit(void)
@@ -130,30 +193,30 @@ void UserInit(void)
 
 	//Initialize all of the push buttons
 	mInitAllSwitches();
-	old_sw2 = sw2;
-	old_sw3 = sw3;
-    
-//	InitTempSensor();
 
-	//Initialize I/O pin and ADC settings to collect potentiometer measurements
-	mInitPOT();
-
-	ResetTempLog();
-	temp_mode = TEMP_REAL_TIME;
-
-	#if defined(__18CXX)
-	/* Init Timer0 for data logging interval (every 1 second) */
-	T0CON = 0b10010111;
-	#endif
-/*
-	//initialize the variable holding the handle for the last
-	// transmission
-	USBOutHandle = 0;
-	USBInHandle = 0;
-*/
 	memset(&ToSendDataBuffer, -1, sizeof(ToSendDataBuffer));
 
-	blinkStatusValid = TRUE;
+	InitI2C();
+/*
+	//=====Load smbus timeout=======
+	if(Read_b_eep(EEP_I2C_timeout)!=0xFF)
+	{
+		i2cTimeout = ((WORD)Read_b_eep(0x09)<<8)|Read_b_eep(EEP_I2C_timeout);
+	}
+	else
+	{
+		i2cTimeout = C_I2C_timeout;
+	}
+*/
+	i2cTimeout = 65534;
+	SetTimer0();
+	I2C_Enable(1);
+	FL_FlashLED(0);
+
+	bTestFlow = 0;
+	testFlow = 0;//no test flow
+
+	blinkStatusValid = FALSE;
 }//end UserInit
 
 /********************************************************************
@@ -170,6 +233,9 @@ void UserInit(void)
  * Overview:		This function is a place holder for other user
  *					routines. It is a mixture of both USB and
  *					non-USB tasks.
+ *					Sends a received Input report back
+ *					to the host in an Output report.
+ *					Both directions use interrupt transfers.
  *
  * Note:			None
  *******************************************************************/
@@ -187,27 +253,6 @@ void ProcessIO(void)
 	//respond to any USB commands that might have come over the bus
 	ServiceRequests();
 }//end ProcessIO
-
-/******************************************************************************
- * Function:		void ResetTempLog(void)
- *
- * PreCondition:	None
- *
- * Input:			None
- *
- * Output:			None
- *
- * Side Effects:	pTemp = 0; valid_temp = 0;
- *
- * Overview:		This function resets the temperature logging variables
- *
- * Note:			None
- *****************************************************************************/
-void ResetTempLog(void)
-{
-	pTemp = 0;
-	valid_temp = 0;
-}//end ResetLog
 
 /******************************************************************************
  * Function:		WORD_VAL ReadPOT(void)
@@ -259,7 +304,8 @@ WORD_VAL ReadPOT(void)
  *****************************************************************************/
 void ServiceRequests(void)
 {
-//	BYTE index;
+	BYTE index;
+	IIC_PACKET iic;
 
 	// Start Generic HID specific
 
@@ -271,8 +317,15 @@ void ServiceRequests(void)
 			//if the handle is no longer busy then the last
 			//transmission is complete
 
+			BYTE len = USBHandleGetLength(USBOutHandle);
+
+			if (len != USBGEN_EP_SIZE) return;
+
 			counter = 0;
 
+			// The CPU owns the endpoint. Check for received data.
+
+			//Echo back to the host PC the command we are fulfilling in the first byte.
 			INPacket.CMD = OUTPacket.CMD;
 			INPacket.len = OUTPacket.len;
 
@@ -282,61 +335,14 @@ void ServiceRequests(void)
 			switch (OUTPacket.CMD)				//Look at the data the host sent, to see what kind of application specific command it sent.
 			{
 			case READ_VERSION:
-				INPacket._byte[2] = MINOR_VERSION;
-				INPacket._byte[3] = MAJOR_VERSION;
-				counter = 4;
+				if (OUTPacket.len == 2)
+				{
+					INPacket._byte[2] = MINOR_VERSION;
+					INPacket._byte[3] = MAJOR_VERSION;
+					counter = 4;
+				}
 				break;
-				/*
-							case ID_BOARD:
-								counter = 1;
-								if(OUTPacket.ID == 0)
-								{
-									mLED_3_Off();mLED_4_Off();
-								}
-								else if(OUTPacket.ID == 1)
-								{
-									mLED_3_Off();mLED_4_On();
-								}
-								else if(OUTPacket.ID == 2)
-								{
-									mLED_3_On();mLED_4_Off();
-								}
-								else if(OUTPacket.ID == 3)
-								{
-									mLED_3_On();mLED_4_On();
-								}
-								else
-									counter = 0;
-								break;
 
-							case UPDATE_LED:
-								// LED1 & LED2 are used as USB event indicators.
-								if(OUTPacket.led_num == 3)
-								{
-									if(OUTPacket.led_status)
-									{
-										mLED_3_On();
-									}
-									else
-									{
-										mLED_3_Off();
-									}
-									counter = 1;
-								}//end if
-								else if(OUTPacket.led_num == 4)
-								{
-									if(OUTPacket.led_status)
-									{
-										mLED_4_On();
-									}
-									else
-									{
-										mLED_4_Off();
-									}
-									counter = 1;
-								}//end if else
-								break;
-				*/
 			case 0x80:	//Toggle LEDs command
 				blinkStatusValid = FALSE;			//Stop blinking the LEDs automatically, going to manually control them now.
 #if defined(__18F14K50)
@@ -359,6 +365,7 @@ void ServiceRequests(void)
 					}
 				}
 #endif
+				ToSendDataBuffer._byte[1] = 0;
 				counter = 2;
 				break;
 
@@ -371,7 +378,7 @@ void ServiceRequests(void)
 				{
 					ToSendDataBuffer._word[1] = 0;
 				}
-
+				ToSendDataBuffer._byte[1] = 2;
 				counter = 4;
 				break;
 
@@ -381,7 +388,7 @@ void ServiceRequests(void)
 														//Some demo boards, like the PIC18F87J50 FS USB Plug-In Module board, do not have a potentiometer (when used stand alone).
 														//This function call will still measure the analog voltage on the I/O pin however.	To make the demo more interesting, it
 														//is suggested that an external adjustable analog voltage should be applied to this pin.
-//				ToSendDataBuffer[1] = 2;
+				ToSendDataBuffer._byte[1] = 2;
 //				ToSendDataBuffer[2] = w.v[0];	//Measured analog voltage LSB
 //				ToSendDataBuffer[3] = w.v[1];	//Measured analog voltage MSB
 				ToSendDataBuffer._word[1] = w.Val;
@@ -390,7 +397,40 @@ void ServiceRequests(void)
 				break;
 			}
 
+			case I2C_Write:
+				INPacket._byte[1] = Transmit();
+				counter = 2;
+				break;
+
+			case I2C_Read:
+				iic.adr = OUTPacket._byte[1];
+				iic.cmd = OUTPacket._byte[2];
+				iic.len = OUTPacket._byte[3];
+
+				counter = 2;
+
+				if (IIC_Read(&iic) == 0)
+				{
+					// NACK
+					INPacket._byte[1] = 0;
+				}
+				else
+				{
+					INPacket._byte[1] = iic.len;
+					for (index = 0; index < iic.len; index++)
+					{
+						INPacket._byte[2+index] = iic.data[index];
+					}
+					counter += iic.len;
+				}
+				break;
+
+			case RESET:
+				Reset();
+				break;
+
 			default:
+				ToSendDataBuffer._byte[1] = 0xFF;
 				break;
 			}
 
@@ -406,6 +446,8 @@ void ServiceRequests(void)
 		//Check to make sure the endpoint/buffer is free before we modify the contents
 		if (!HIDTxHandleBusy(USBInHandle))
 		{
+			// The CPU owns the endpoint. Prepare to send data to the host.
+
 			//Prepare the USB module to send the data packet to the host
 			USBInHandle = HIDTxPacket(HID_EP, (BYTE*)&ToSendDataBuffer, USBGEN_EP_SIZE);
 
@@ -441,9 +483,9 @@ void BlinkUSBStatus(void)
 {
 	// No need to clear UIRbits.SOFIF to 0 here.
 	// Callback caller is already doing that.
-	static WORD led_count=0;
+	static WORD led_count = 0;
 
-	if(led_count == 0)led_count = 10000U;
+	if (led_count == 0)	led_count = 10000U;
 	led_count--;
 
 #ifdef __18F14K50
@@ -518,56 +560,325 @@ void BlinkUSBStatus(void)
 #endif
 }//end BlinkUSBStatus
 
-/******************************************************************************
- * Function:		BOOL Switch2IsPressed(void)
- *
- * PreCondition:	None
- *
- * Input:			None
- *
- * Output:			BOOL - TRUE if the SW2 was pressed and FALSE otherwise
- *
- * Side Effects:	None
- *
- * Overview:		returns TRUE if the SW2 was pressed and FALSE otherwise
- *
- * Note:			None
- *****************************************************************************/
-BOOL Switch2IsPressed(void)
-{
-	if(sw2 != old_sw2)
-	{
-		old_sw2 = sw2;					// Save new value
-		if(sw2 == 0)					// If pressed
-			return TRUE;				// Was pressed
-	}//end if
-	return FALSE;						// Was not pressed
-}//end Switch2IsPressed
 
-/******************************************************************************
- * Function:		BOOL Switch3IsPressed(void)
- *
- * PreCondition:	None
- *
- * Input:			None
- *
- * Output:			BOOL - TRUE if the SW3 was pressed and FALSE otherwise
- *
- * Side Effects:	None
- *
- * Overview:		returns TRUE if the SW3 was pressed and FALSE otherwise
- *
- * Note:			None
- *****************************************************************************/
-BOOL Switch3IsPressed(void)
+void FL_FlashLED(BOOL bON)
 {
-	if(sw3 != old_sw3)
+	LATBbits.LATB7 = ~bON;
+}
+
+
+/****************************************************************************
+			EEPROM
+***************************************************************************/
+unsigned char Read_b_eep( unsigned int badd )
+{
+	EEADR = (badd & 0x0ff);
+	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
+	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.RD = 1;// Read
+	return ( EEDATA );// return with read byte
+}
+
+void Write_b_eep( unsigned int badd,unsigned char bdata )
+{
+	EEADR = (badd & 0x0ff);
+	EEDATA = bdata;
+	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
+	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.WREN = 1;// Enable Write
+
+	INTCONbits.GIE = 0;// Disable All interrupt
+	EECON2 = 0x55;
+	EECON2 = 0xAA;
+	EECON1bits.WR = 1;
+	INTCONbits.GIE = 1;// Enable All interrupt
+
+	while( EECON1bits.WR );
+
+	EECON1bits.WREN = 0;//Disable Write
+}
+
+
+/*****************************************************************************
+			I2C
+*****************************************************************************/
+
+BOOL Read_BYTE_FROM_I2C(unsigned char* buf)
+{
+	WORD WC = 0;
+	i2cHang = 0;
+
+	I2C_Idle();
+	SSPCON2bits.RCEN = 1;
+
+	while(!SSPSTATbits.BF)
 	{
-		old_sw3 = sw3;					// Save new value
-		if(sw3 == 0)					// If pressed
-			return TRUE;				// Was pressed
-	}//end if
-	return FALSE;						// Was not pressed
-}//end Switch3IsPressed
+		if(WC > i2cTimeout )
+		{
+			WC = 0;
+			i2cHang = 1;
+			return 0;
+		}
+		WC++;
+	}
+	WC = 0;
+
+	buf[0] = SSPBUF;
+	while(SSPCON2bits.RCEN);
+
+	if ( PIR2bits.BCLIF )	// test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		return 0;			// return with Bus Collision error
+	}
+
+	return 1;
+}
+
+BOOL IIC_Write(IIC_PACKET* iic)
+{
+	BYTE i;
+	PIR2bits.BCLIF = 0;	//clear flag
+	I2C_Idle();
+	//SSPCON2bits.SEN = 1;	//Start
+	//while ( SSPCON2bits.SEN );	// wait until start condition is over
+	if(I2C_Start() == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if ( PIR2bits.BCLIF )		// test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		I2C_Stop();
+		return 0;			 // return with Bus Collision error
+	}
+
+	if(Write_BYTE_TO_I2C(iic->adr&0xFE) == 0) // Address
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if(Write_BYTE_TO_I2C(iic->cmd) == 0) // command
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	for(i=0;i<iic->len;i++)//
+	{
+		if(Write_BYTE_TO_I2C(iic->data[i]) == 0)
+		{
+			I2C_Stop();
+			return 0;
+		}
+	}
+
+	I2C_Stop();
+
+	return 1;
+}
+
+BOOL IIC_Read(IIC_PACKET* iic)
+{
+	BYTE i;
+	PIR2bits.BCLIF = 0;	//clear flag
+	I2C_Idle();
+	//SSPCON2bits.SEN = 1;	//Start
+	//while ( SSPCON2bits.SEN );	// wait until start condition is over
+	if (I2C_Start() == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if ( PIR2bits.BCLIF )		// test for bus collision
+	{
+		//LATCbits.LATC2 = 0;
+		PIR2bits.BCLIF = 0;	//clear flag
+		I2C_Stop();
+		return 0;			// return with Bus Collision error
+	}
+
+	if (Write_BYTE_TO_I2C(iic->adr&0xFE) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if (Write_BYTE_TO_I2C(iic->cmd) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+	//=================================
+	//SSPCON2bits.RSEN = 1;			// initiate bus restart condition
+	//while ( SSPCON2bits.RSEN );	// wait until re-start condition is over
+	if (I2C_ReStart() == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if ( PIR2bits.BCLIF )		// test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		//LATCbits.LATC3 = 0;
+		I2C_Stop();
+		return 0;			// return with Bus Collision error
+	}
+
+	if (Write_BYTE_TO_I2C(iic->adr|0x01) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	// recevie data
+	for (i = 0; i < iic->len; i++)
+	{
+		if (Read_BYTE_FROM_I2C(&iic->data[i]) == 0)
+		{
+			if (i2cHang)
+			{
+				i2cHang = 0;
+				I2C_ProtocolErr();
+			}
+			I2C_Stop();
+			return 0;
+		}
+
+		if (i < (iic->len-1))
+		{
+			// return ack
+			if (I2C_Ack() == 0)
+			{
+				I2C_Stop();
+				return 0;
+			}
+			//while(SSPCON2bits.ACKEN );
+		}
+	}
+
+	// last byte need to return nack
+	I2C_NotAck();
+	//while ( SSPCON2bits.ACKEN ); // wait until ACK sequence is over
+
+	I2C_Stop();
+	return 1;
+}
+
+
+BOOL Transmit(void)
+{
+	BYTE i;
+//	WORD WC = 0;
+//	i2cHang = 0;
+
+	PIR2bits.BCLIF = 0;	//clear flag
+	I2C_Idle();
+
+	if (I2C_Start() == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+/*
+	SSPCON2bits.SEN = 1;	//Start
+	while ( SSPCON2bits.SEN )	   // wait until start condition is over
+	{
+		if (WC > i2cTimeout )
+		{
+			WC = 0;
+			i2cHang = 1;
+			return 0;
+		}
+		WC++;
+	}
+	WC = 0;
+*/
+	if ( PIR2bits.BCLIF )		// test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		I2C_Stop();
+		return 0;			 // return with Bus Collision error
+	}
+
+	if (Write_BYTE_TO_I2C((OUTPacket._byte[1]&0xFE)) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if (Write_BYTE_TO_I2C(OUTPacket._byte[2]) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	for (i = 0; i < OUTPacket._byte[3]; i++)//tranlength
+	{
+		if (Write_BYTE_TO_I2C(OUTPacket._byte[4+i]) == 0)
+		{
+			I2C_Stop();
+			return 0;
+		}
+	}
+
+	I2C_Stop();
+	return 1;
+}
+
+BOOL Write_BYTE_TO_I2C(unsigned char data_out)
+{
+	WORD WC = 0;
+	i2cHang = 0;
+
+	SSPBUF = data_out;
+
+	if (SSPCON1bits.WCOL)//write collision detect
+	{
+		SSPCON1bits.WCOL = 0;
+		return 0;
+	}
+
+	while (SSPSTATbits.BF)
+	{
+		if (WC > i2cTimeout )
+		{
+			WC = 0;
+			i2cHang = 1;
+			return 0;
+		}
+		WC++;
+	}
+	WC = 0;
+
+	while ( ( SSPCON2 & 0x1F ) || ( SSPSTATbits.R_W ) )
+	{
+		if (WC > i2cTimeout )
+		{
+			WC = 0;
+			i2cHang = 1;
+			return 0;
+		}
+		WC++;
+	}
+	WC = 0;
+
+	if (SSPCON2bits.ACKSTAT)
+	{
+		return 0;
+	}
+	else
+	{
+		return 1;
+	}
+}
+
+/*****************************************************************************
+
 
 /** EOF user.c ***************************************************************/

@@ -176,7 +176,7 @@ ROM USB_DEVICE_DESCRIPTOR device_dsc=
 	USB_EP0_BUFF_SIZE,		// Max packet size for EP0, see usb_config.h
 	0x04D8,					// Vendor ID
 	0x003F,					// Product ID: Custom HID device demo
-	0x0003,					// Device release number in BCD format
+	0x0004,					// Device release number in BCD format
 	0x01,					// Manufacturer string index
 	0x02,					// Product string index
 	0x00,					// Device serial number string index
@@ -254,7 +254,7 @@ sizeof(sd002),USB_DESCRIPTOR_STRING,
 //Class specific descriptor - HID
 ROM struct{BYTE report[HID_RPT01_SIZE];}hid_rpt01={
 	{
-	0x06, 0x02, 0xFF,		// Usage Page = 0xFF02 (Vendor Defined Page 1)
+	0x06, 0x03, 0xFF,		// Usage Page = 0xFF02 (Vendor Defined Page 1)
 	0x09, 0x01,				// Usage (Vendor Usage 1)
 	0xA1, 0x01,				// Collection (Application)
 
