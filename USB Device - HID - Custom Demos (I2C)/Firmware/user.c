@@ -169,6 +169,38 @@ void SetT3(unsigned int time)
 }
 
 
+/****************************************************************************
+			EEPROM
+***************************************************************************/
+unsigned char Read_b_eep( unsigned char badd )
+{
+	EEADR = badd;
+	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
+	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.RD = 1;// Read
+	return ( EEDATA );// return with read byte
+}
+
+void Write_b_eep( unsigned char badd,unsigned char bdata )
+{
+	EEADR = badd;
+	EEDATA = bdata;
+	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
+	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.WREN = 1;// Enable Write
+
+	INTCONbits.GIE = 0;// Disable All interrupt
+	EECON2 = 0x55;
+	EECON2 = 0xAA;
+	EECON1bits.WR = 1;
+	INTCONbits.GIE = 1;// Enable All interrupt
+
+	while( EECON1bits.WR );
+
+	EECON1bits.WREN = 0;//Disable Write
+}
+
+
 /******************************************************************************
  * Function:		void UserInit(void)
  *
@@ -197,7 +229,7 @@ void UserInit(void)
 	memset(&ToSendDataBuffer, -1, sizeof(ToSendDataBuffer));
 
 	InitI2C();
-/*
+
 	//=====Load smbus timeout=======
 	if(Read_b_eep(EEP_I2C_timeout)!=0xFF)
 	{
@@ -207,8 +239,7 @@ void UserInit(void)
 	{
 		i2cTimeout = C_I2C_timeout;
 	}
-*/
-	i2cTimeout = 65534;
+
 	SetTimer0();
 	I2C_Enable(1);
 	FL_FlashLED(0);
@@ -216,7 +247,7 @@ void UserInit(void)
 	bTestFlow = 0;
 	testFlow = 0;//no test flow
 
-	blinkStatusValid = FALSE;
+//	blinkStatusValid = FALSE;
 }//end UserInit
 
 /********************************************************************
@@ -309,6 +340,7 @@ void ServiceRequests(void)
 
 	// Start Generic HID specific
 
+	// Receive
 	if (usb_state == 'r')
 	{
 		//Check if we have received an OUT data packet from the host
@@ -317,13 +349,13 @@ void ServiceRequests(void)
 			//if the handle is no longer busy then the last
 			//transmission is complete
 
+			// The CPU owns the endpoint. Check for received data.
+
 			BYTE len = USBHandleGetLength(USBOutHandle);
 
 			if (len != USBGEN_EP_SIZE) return;
 
 			counter = 0;
-
-			// The CPU owns the endpoint. Check for received data.
 
 			//Echo back to the host PC the command we are fulfilling in the first byte.
 			INPacket.CMD = OUTPacket.CMD;
@@ -341,6 +373,8 @@ void ServiceRequests(void)
 					INPacket._byte[3] = MAJOR_VERSION;
 					counter = 4;
 				}
+				else
+					counter = 1;
 				break;
 
 			case 0x80:	//Toggle LEDs command
@@ -370,6 +404,7 @@ void ServiceRequests(void)
 				break;
 
 			case 0x81:	//Get push button state
+				ToSendDataBuffer._byte[1] = 1;
 				if (sw3 == 1)							//pushbutton not pressed, pull up resistor on circuit board is pulling the PORT pin high
 				{
 					ToSendDataBuffer._word[1] = 1;
@@ -378,7 +413,6 @@ void ServiceRequests(void)
 				{
 					ToSendDataBuffer._word[1] = 0;
 				}
-				ToSendDataBuffer._byte[1] = 2;
 				counter = 4;
 				break;
 
@@ -396,6 +430,27 @@ void ServiceRequests(void)
 				counter = 4;
 				break;
 			}
+
+			case READ_EEDATA:
+				if (OUTPacket.len == 1)
+				{
+					INPacket._byte[3] = Read_b_eep(INPacket._byte[2] = OUTPacket._byte[2]);
+					INPacket._byte[1] = 2;
+					counter = 4;
+				}
+				else
+					counter = 1;
+				break;
+
+			case WRITE_EEDATA:
+				if (OUTPacket.len == 2)
+				{
+					Write_b_eep(INPacket._byte[2] = OUTPacket._byte[2], INPacket._byte[3] = OUTPacket._byte[3]);
+					counter = 4;
+				}
+				else
+					counter = 1;
+				break;
 
 			case I2C_Write:
 				INPacket._byte[1] = Transmit();
@@ -441,6 +496,7 @@ void ServiceRequests(void)
 		}
 	}
 
+	// Transmit
 	if (usb_state == 't')
 	{
 		//Check to make sure the endpoint/buffer is free before we modify the contents
@@ -564,38 +620,6 @@ void BlinkUSBStatus(void)
 void FL_FlashLED(BOOL bON)
 {
 	LATBbits.LATB7 = ~bON;
-}
-
-
-/****************************************************************************
-			EEPROM
-***************************************************************************/
-unsigned char Read_b_eep( unsigned int badd )
-{
-	EEADR = (badd & 0x0ff);
-	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
-	EECON1bits.EEPGD = 0;// Access EEPROM
-	EECON1bits.RD = 1;// Read
-	return ( EEDATA );// return with read byte
-}
-
-void Write_b_eep( unsigned int badd,unsigned char bdata )
-{
-	EEADR = (badd & 0x0ff);
-	EEDATA = bdata;
-	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
-	EECON1bits.EEPGD = 0;// Access EEPROM
-	EECON1bits.WREN = 1;// Enable Write
-
-	INTCONbits.GIE = 0;// Disable All interrupt
-	EECON2 = 0x55;
-	EECON2 = 0xAA;
-	EECON1bits.WR = 1;
-	INTCONbits.GIE = 1;// Enable All interrupt
-
-	while( EECON1bits.WR );
-
-	EECON1bits.WREN = 0;//Disable Write
 }
 
 

@@ -3,7 +3,7 @@
  Dependencies:	See INCLUDES section
  Processor:		PIC18 USB Microcontrollers
  Hardware:		The code is natively intended to be used on the following
-				hardware platforms: PICDEM™ FS USB Demo Board.
+				hardware platforms: PICDEM(tm) FS USB Demo Board.
 				The firmware may be
 				modified for use on other USB platforms by editing the
 				HardwareProfile.h file.
@@ -13,8 +13,8 @@
  Software License Agreement:
 
  The software supplied herewith by Microchip Technology Incorporated
- (the “Company”) for its PIC® Microcontroller is intended and
- supplied to you, the Company’s customer, for use solely and
+ (the "Company") for its PIC(R) Microcontroller is intended and
+ supplied to you, the Company's customer, for use solely and
  exclusively on Microchip PIC Microcontroller products. The
  software is owned by the Company and/or its supplier, and is
  protected under applicable copyright laws. All rights are reserved.
@@ -23,7 +23,7 @@
  civil liability for the breach of the terms and conditions of this
  license.
 
- THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
+ THIS SOFTWARE IS PROVIDED IN AN "AS IS" CONDITION. NO WARRANTIES,
  WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
  TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
  PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
@@ -254,7 +254,7 @@ sizeof(sd002),USB_DESCRIPTOR_STRING,
 //Class specific descriptor - HID
 ROM struct{BYTE report[HID_RPT01_SIZE];}hid_rpt01={
 	{
-	0x06, 0x03, 0xFF,		// Usage Page = 0xFF02 (Vendor Defined Page 1)
+	0x06, 0x02, 0xFF,		// Usage Page = 0xFF02 (Vendor Defined Page 1)
 	0x09, 0x01,				// Usage (Vendor Usage 1)
 	0xA1, 0x01,				// Collection (Application)
 
@@ -299,10 +299,16 @@ ROM struct{BYTE report[MSD_RPT01_SIZE];}msd_rpt01={
 	0x05, 0x01, /*		Usage Page (Generic Desktop)		*/
 	0x09, 0x30, /*		Usage (X)							*/
 	0x09, 0x31, /*		Usage (Y)							*/
+	0x16, 0x00, 0x80,//	LOGICAL_MINIMUM (-32768)
+	0x26, 0xff, 0x7f,//	LOGICAL_MAXIMUM (32767)
+	0x75, 0x10,	//		REPORT_SIZE (16)
+	0x95, 0x02, /*		Report Count (2)					*/
+	0x81, 0x06, /*		Input (Data, Variable, Relative)	*/
+	0x09, 0x38, /*		Usage (Wheel)						*/
 	0x15, 0x81, /*		Logical Minimum (-127)				*/
 	0x25, 0x7F, /*		Logical Maximum (127)				*/
 	0x75, 0x08, /*		Report Size (8)						*/
-	0x95, 0x02, /*		Report Count (2)					*/
+	0x95, 0x01, /*		Report Count (1)					*/
 	0x81, 0x06, /*		Input (Data, Variable, Relative)	*/
 	0xC0, 0xC0
 	}			/* End Collection, End Collection			*/

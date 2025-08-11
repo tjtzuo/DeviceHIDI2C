@@ -1,6 +1,6 @@
 /*********************************************************************
  *
- *				  Microchip USB C18 Firmware Version 1.0
+ *				Microchip USB C18 Firmware Version 1.0
  *
  *********************************************************************
  * FileName:		user.h
@@ -12,8 +12,8 @@
  * Software License Agreement
  *
  * The software supplied herewith by Microchip Technology Incorporated
- * (the “Company”) for its PIC® Microcontroller is intended and
- * supplied to you, the Company’s customer, for use solely and
+ * (the "Company") for its PIC(R) Microcontroller is intended and
+ * supplied to you, the Company's customer, for use solely and
  * exclusively on Microchip PIC Microcontroller products. The
  * software is owned by the Company and/or its supplier, and is
  * protected under applicable copyright laws. All rights are reserved.
@@ -22,7 +22,7 @@
  * civil liability for the breach of the terms and conditions of this
  * license.
  *
- * THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
+ * THIS SOFTWARE IS PROVIDED IN AN "AS IS" CONDITION. NO WARRANTIES,
  * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
  * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
  * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
@@ -42,18 +42,38 @@
 #define MINOR_VERSION	0x00	//Demo Version 1.00
 #define MAJOR_VERSION	0x01
 
-#define C_I2C_timeout	4000
-#define C_I2C_BR		0xA0 //0x80
+#define C_I2C_timeout	65534	//4000
+#define C_I2C_BR		0xA0	//0x80
 
 /*          EEPROM Address          */
 #define EEP_I2C_timeout	0x08
 #define EEP_I2C_BR		0x0A
 
 
-typedef enum
+typedef enum _TYPE_CMD
 {
 	READ_VERSION	= 0x00,
 
+	READ_FLASH		= 0x01,
+	WRITE_FLASH		= 0x02,
+	ERASE_FLASH		= 0x03,
+	READ_EEDATA		= 0x04,
+	WRITE_EEDATA	= 0x05,
+	READ_CONFIG		= 0x06,
+	WRITE_CONFIG	= 0x07,
+
+	SPI_Write		= 0x10,
+	SPI_Read		= 0x11,
+	SPI_Writing		= 0x12,
+	SPI_WriteRead	= 0x13,
+/*
+	ID_BOARD		= 0x31,
+	UPDATE_LED		= 0x32,
+	SET_TEMP_REAL	= 0x33,
+	RD_TEMP			= 0x34,
+	SET_TEMP_LOGGING= 0x35,
+	RD_TEMP_LOGGING = 0x36,
+*/
 	RD_POT			= 0x37,
 
     I2C_Write		= 0x40,
@@ -63,23 +83,29 @@ typedef enum
     I2C_BlockRead	= 0x44,
     I2C_WriteRead	= 0x45,
     I2C_Read2		= 0x46,    
-
+/*
+	IO_WR			= 0xF0,
+	IO_RD			= 0xF1,
+*/
 	IO_CTL			= 0xF1,
     IO_Test			= 0xF2,
-	RESET			= 0xFF
-}TYPE_CMD;
 
-typedef enum
+	RESET			= 0xFF
+}
+TYPE_CMD;
+
+typedef enum _IIC_STATE
 {
 	I2C_NAK				= 0,
 	I2C_ACK				= 1,
 	I2C_TIMEOUT			= 2
-}IIC_STATE;
+}
+IIC_STATE;
 
 #define USBGEN_EP_SIZE          64
 
 /** S T R U C T U R E S ******************************************************/
-typedef union DATA_PACKET
+typedef union _DATA_PACKET
 {
 	BYTE _byte[USBGEN_EP_SIZE];	 //For byte access
 	WORD _word[USBGEN_EP_SIZE/2];//For word access(USBGEN_EP_SIZE msut be even)
@@ -106,24 +132,26 @@ typedef union DATA_PACKET
 		WORD word_data;
 	};
 */
-} DATA_PACKET;
+}
+DATA_PACKET;
 
-typedef struct IIC_PACKET
+typedef struct _IIC_PACKET
 {
 	BYTE adr;
 	BYTE cmd;
 	BYTE sts;
 	BYTE len;
 	BYTE data[34];
-}IIC_PACKET;
+}
+IIC_PACKET;
 
 
 /** P U B L I C	 P R O T O T Y P E S *****************************************/
 void UserInit(void);
 void ProcessIO(void);
 
-unsigned char Read_b_eep( unsigned int badd );
-void Write_b_eep( unsigned int badd,unsigned char bdata );
+unsigned char Read_b_eep( unsigned char badd );
+void Write_b_eep( unsigned char badd,unsigned char bdata );
 
 BOOL Transmit(void);
 BOOL Receive(void);
