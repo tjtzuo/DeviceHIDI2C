@@ -485,11 +485,14 @@ void ServiceRequests(void)
 				break;
 
 			default:
-				ToSendDataBuffer._byte[1] = 0xFF;
+//				ToSendDataBuffer._byte[1] = 0xFF;
 				break;
 			}
 
-			INPacket._byte[USBGEN_EP_SIZE - 1] = counter;
+			for (index = counter; index < USBGEN_EP_SIZE - 1; index++)
+				INPacket._byte[index] = 0xFF;
+
+			INPacket._byte[index] = counter;
 
 			// Ready to transmit the received data back to the host.
 			usb_state = 't';

@@ -39,7 +39,7 @@
 
 /** D E F I N I T I O N S ****************************************************/
 /* PICDEM FS USB Demo Version */
-#define MINOR_VERSION	0x00	//Demo Version 1.00
+#define MINOR_VERSION	0x01	//Demo Version 1.01
 #define MAJOR_VERSION	0x01
 
 #define C_I2C_timeout	65534	//4000
