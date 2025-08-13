@@ -149,6 +149,7 @@ void OpenT3(void)
 void SetT1(unsigned int time)
 {
 	unsigned int t1 = 0xFFFF;
+	T1CONbits.TMR1ON = 0;
 	t1 = t1 - time;
 	TMR1H = t1/256;
 	TMR1L = t1%256;
@@ -160,6 +161,7 @@ void SetT1(unsigned int time)
 void SetT3(unsigned int time)
 {
 	unsigned int t3 = 0xFFFF;
+	T3CONbits.TMR3ON = 0;
 	t3 = t3 - time;
 	TMR3H = t3/256;
 	TMR3L = t3%256;
@@ -301,6 +303,7 @@ void ProcessIO(void)
  *
  * Note:			None
  *****************************************************************************/
+/*
 WORD_VAL ReadPOT(void)
 {
 	WORD_VAL w;
@@ -308,14 +311,15 @@ WORD_VAL ReadPOT(void)
 	w.Val = 0;
 
 	#if defined(__18CXX) || defined(__XC8)
-			ADCON0bits.GO = 1;				// Start AD conversion
-			while(ADCON0bits.GO);	  // Wait for conversion
+			ADCON0bits.GO = 1;			// Start AD conversion
+			while(ADCON0bits.GO);		// Wait for conversion
 			w.v[0] = ADRESL;
 			w.v[1] = ADRESH;
 	#endif
 
 	return w;
 }//end ReadPOT
+*/
 
 /******************************************************************************
  * Function:		void ServiceRequests(void)
@@ -337,6 +341,7 @@ void ServiceRequests(void)
 {
 	BYTE index;
 	IIC_PACKET iic;
+    unsigned int addr;
 
 	// Start Generic HID specific
 
@@ -415,7 +420,7 @@ void ServiceRequests(void)
 				}
 				counter = 4;
 				break;
-
+/*
 			case RD_POT:	//Read POT command.	 Uses ADC to measure an analog voltage on one of the ANxx I/O pins, and returns the result to the host
 			{
 				WORD_VAL w = ReadPOT();					//Use ADC to read the I/O pin voltage.	See the relevant HardwareProfile - xxxxx.h file for the I/O pin that it will measure.
@@ -430,7 +435,7 @@ void ServiceRequests(void)
 				counter = 4;
 				break;
 			}
-
+*/
 			case READ_EEDATA:
 				if (OUTPacket.len == 1)
 				{
@@ -450,6 +455,19 @@ void ServiceRequests(void)
 				}
 				else
 					counter = 1;
+				break;
+
+			case EEROM_32W:
+				addr = ((unsigned int)OUTPacket._byte[1]<<8)|OUTPacket._byte[2];
+				INPacket._byte[1] = EE_Write(addr,&OUTPacket._byte[3]);
+				counter=2;
+				break;
+				
+			case EEROM_32R:
+				addr = ((unsigned int)OUTPacket._byte[1]<<8)|OUTPacket._byte[2];
+				INPacket._byte[1] = 32;
+				counter = 34;			
+				if(EE_Read(addr,&INPacket._byte[2]) == 0) INPacket._byte[1] = 0;
 				break;
 
 			case I2C_Write:
@@ -906,6 +924,215 @@ BOOL Write_BYTE_TO_I2C(unsigned char data_out)
 }
 
 /*****************************************************************************
+
+/*****************************************************************************
+			EEPROM
+*****************************************************************************/
+BOOL EE_Write(unsigned int address,unsigned char* buf)
+{
+#if 1
+	BYTE i;
+	I2C_Start_IO();//Start
+	I2C_TX_IO(0xA0);
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	I2C_TX_IO((address&0xFF00)>>8);
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	I2C_TX_IO(address&0xFF);
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	for(i=0;i<32;i++)
+	{
+		I2C_TX_IO(buf[i]);
+		if(I2C_Rec_Ack())
+		{
+			I2C_Stop_IO();
+			return 0;
+		}
+	}
+	
+	I2C_Stop_IO();
+#else
+	BYTE i;	
+	PIR2bits.BCLIF = 0;	//clear flag
+	I2C_Idle();
+	SSPCON2bits.SEN = 1;	//Start
+	while ( SSPCON2bits.SEN );      // wait until start condition is over 
+	
+	if ( PIR2bits.BCLIF )       // test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		I2C_Stop();
+		return 0;            // return with Bus Collision error 
+	}
+	// write ID
+	if(Write_BYTE_TO_I2C(0xA0) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+	// write address
+	if(Write_BYTE_TO_I2C((address&0xFF00)>>8) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if(Write_BYTE_TO_I2C(address&0xFF) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+	// page data write
+	for(i=0;i<32;i++)//
+	{
+		if(Write_BYTE_TO_I2C(buf[i]) == 0)
+		{
+			I2C_Stop();
+			return 0;
+		}
+	}
+	
+	I2C_Stop();
+#endif	
+	return 1;
+}
+
+BOOL EE_Read(unsigned int address,unsigned char* buf)
+{
+#if 1
+	BYTE i;
+	I2C_Start_IO();//Start
+	I2C_TX_IO(0xA0);// device adress
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	I2C_TX_IO((address&0xFF00)>>8);// high address
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	I2C_TX_IO(address&0xFF);// low address
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+	
+	I2C_ReStart_IO();//Restart
+	I2C_TX_IO(0xA1);// device address read
+	if(I2C_Rec_Ack())
+	{
+		I2C_Stop_IO();
+		return 0;
+	}
+
+	// recevie data 
+	for(i=0;i<32;i++)
+	{
+		buf[i] = I2C_RX_IO();
+		if(i < 31)
+		{
+			// return ack
+			I2C_Send_Ack(0);// ACK
+		}
+	}
+	I2C_Send_Ack(1);// NACK
+	I2C_Stop_IO();
+#else
+	BYTE i;
+	PIR2bits.BCLIF = 0;	//clear flag
+	I2C_Idle();
+	SSPCON2bits.SEN = 1;	//Start
+	while ( SSPCON2bits.SEN );      // wait until start condition is over 
+	
+	if ( PIR2bits.BCLIF )       // test for bus collision
+	{
+		//LATCbits.LATC2 = 0;
+		PIR2bits.BCLIF = 0;	//clear flag
+		I2C_Stop();
+		return 0;            // return with Bus Collision error 
+	}
+
+	if(Write_BYTE_TO_I2C(0xA0) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	// write address
+	if(Write_BYTE_TO_I2C((address&0xFF00)>>8) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+
+	if(Write_BYTE_TO_I2C(address&0xFF) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+	//=================================
+	SSPCON2bits.RSEN = 1;           // initiate bus restart condition
+	while ( SSPCON2bits.RSEN );  // wait until re-start condition is over 
+	
+	if ( PIR2bits.BCLIF )       // test for bus collision
+	{
+		PIR2bits.BCLIF = 0;	//clear flag
+		//LATCbits.LATC3 = 0;
+		I2C_Stop();
+		return 0;            // return with Bus Collision error 
+	}
+	
+	if(Write_BYTE_TO_I2C(0xA1) == 0)
+	{
+		I2C_Stop();
+		return 0;
+	}
+	
+	// recevie data 
+	for(i=0;i<32;i++)
+	{
+		//FL_DelayCnt(50);		
+		if(Read_BYTE_FROM_I2C(&buf[i]) == 0)
+		{
+			if(i2cHang)
+			{
+				i2cHang = 0;
+				I2C_ProtocolErr();
+			}
+			I2C_Stop();
+			return 0;
+		}
+		
+		if(i < 31)
+		{
+			// return ack
+			I2C_Ack();
+			while(SSPCON2bits.ACKEN );
+		}
+	}
+	// last byte need to return nack
+	I2C_NotAck();
+	while ( SSPCON2bits.ACKEN ); // wait until ACK sequence is over
+	
+	I2C_Stop();
+#endif	
+	return 1;
+}
 
 
 /** EOF user.c ***************************************************************/

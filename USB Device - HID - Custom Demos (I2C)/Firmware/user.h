@@ -39,11 +39,15 @@
 
 /** D E F I N I T I O N S ****************************************************/
 /* PICDEM FS USB Demo Version */
-#define MINOR_VERSION	0x01	//Demo Version 1.01
+#define MINOR_VERSION	0x02	//Demo Version 1.02
 #define MAJOR_VERSION	0x01
 
 #define C_I2C_timeout	65534	//4000
 #define C_I2C_BR		0xA0	//0x80
+
+#define MemBaseAdr_BootLoader		0x0000
+#define MemBaseAdr_MainCode			0x1000
+#define MemBaseAdr_DataFlash		0xF000
 
 /*          EEPROM Address          */
 #define EEP_I2C_timeout	0x08
@@ -66,6 +70,18 @@ typedef enum _TYPE_CMD
 	SPI_Read		= 0x11,
 	SPI_Writing		= 0x12,
 	SPI_WriteRead	= 0x13,
+    SPI_BlockRead	= 0x14,
+
+	UART_W			= 0x20,
+	UART_R			= 0x21,
+	HDQ_W			= 0x22,
+	HDQ_R			= 0x23,
+/*
+	EEROM_W			= 0x30,
+	EEROM_R			= 0x31,
+*/
+	EEROM_32W		= 0x34,
+	EEROM_32R		= 0x35,
 /*
 	ID_BOARD		= 0x31,
 	UPDATE_LED		= 0x32,
@@ -73,8 +89,9 @@ typedef enum _TYPE_CMD
 	RD_TEMP			= 0x34,
 	SET_TEMP_LOGGING= 0x35,
 	RD_TEMP_LOGGING = 0x36,
-*/
 	RD_POT			= 0x37,
+*/
+	RD_Motion		= 0x38,
 
     I2C_Write		= 0x40,
     I2C_Read		= 0x41,    
@@ -101,6 +118,9 @@ typedef enum _IIC_STATE
 	I2C_TIMEOUT			= 2
 }
 IIC_STATE;
+
+#define max(a,b)	(((a) > (b)) ? (a) : (b))
+#define min(a,b)	(((a) < (b)) ? (a) : (b))
 
 #define USBGEN_EP_SIZE          64
 
