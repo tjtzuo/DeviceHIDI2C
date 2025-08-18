@@ -39,7 +39,7 @@
 
 /** D E F I N I T I O N S ****************************************************/
 /* PICDEM FS USB Demo Version */
-#define MINOR_VERSION	0x02	//Demo Version 1.02
+#define MINOR_VERSION	0x03	//Demo Version 1.03
 #define MAJOR_VERSION	0x01
 
 #define C_I2C_timeout	65534	//4000
@@ -76,30 +76,24 @@ typedef enum _TYPE_CMD
 	UART_R			= 0x21,
 	HDQ_W			= 0x22,
 	HDQ_R			= 0x23,
-/*
+
 	EEROM_W			= 0x30,
 	EEROM_R			= 0x31,
-*/
+
 	EEROM_32W		= 0x34,
 	EEROM_32R		= 0x35,
-/*
-	ID_BOARD		= 0x31,
-	UPDATE_LED		= 0x32,
-	SET_TEMP_REAL	= 0x33,
-	RD_TEMP			= 0x34,
-	SET_TEMP_LOGGING= 0x35,
-	RD_TEMP_LOGGING = 0x36,
-	RD_POT			= 0x37,
-*/
+	EEROM_60W		= 0x36,
+	EEROM_60R		= 0x37,
+
 	RD_Motion		= 0x38,
 
     I2C_Write		= 0x40,
-    I2C_Read		= 0x41,    
+    I2C_Read		= 0x41,
     I2C_Test		= 0x42,
     I2C_BlockWrite	= 0x43,
     I2C_BlockRead	= 0x44,
     I2C_WriteRead	= 0x45,
-    I2C_Read2		= 0x46,    
+    I2C_Read2		= 0x46,
 /*
 	IO_WR			= 0xF0,
 	IO_RD			= 0xF1,
@@ -161,7 +155,7 @@ typedef struct _IIC_PACKET
 	BYTE cmd;
 	BYTE sts;
 	BYTE len;
-	BYTE data[34];
+	BYTE data[USBGEN_EP_SIZE-4];
 }
 IIC_PACKET;
 
@@ -178,8 +172,8 @@ BOOL Receive(void);
 BOOL Write_BYTE_TO_I2C(unsigned char data_out);
 BOOL Read_BYTE_FROM_I2C(unsigned char* buf);
 BOOL Read_PAGE_FROM_I2C(void);
-BOOL EE_Write(unsigned int address,unsigned char* buf);
-BOOL EE_Read(unsigned int address,unsigned char* buf);
+BOOL EE_Write(unsigned int address,unsigned char* buf,BYTE len);
+BOOL EE_Read(unsigned int address,unsigned char* buf,BYTE len);
 void FL_FlashLED(BOOL bON);
 BOOL Get_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);
 BOOL Set_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);

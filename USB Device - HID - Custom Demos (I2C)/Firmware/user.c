@@ -68,17 +68,21 @@ BOOL blinkStatusValid = TRUE;
 char usb_state = 'r';
 // End Generic Hid specific
 
+IIC_PACKET iic;
+/*
 BYTE tranlength;
 BYTE eeadr;
 BYTE testFlow;
 BYTE DownLoadFlow;
 BYTE ErrorCode;
+*/
 BOOL i2cHang;
 WORD i2cTimeout;
+/*
 BOOL bClkTrim;
 BOOL bWriteBusy;
 BOOL bTestFlow;
-
+*/
 extern USB_HANDLE USBOutHandle;
 extern USB_HANDLE USBInHandle;
 
@@ -233,9 +237,9 @@ void UserInit(void)
 	InitI2C();
 
 	//=====Load smbus timeout=======
-	if(Read_b_eep(EEP_I2C_timeout)!=0xFF)
+	if (Read_b_eep(EEP_I2C_timeout) != 0xFF)
 	{
-		i2cTimeout = ((WORD)Read_b_eep(0x09)<<8)|Read_b_eep(EEP_I2C_timeout);
+		i2cTimeout = ((WORD)Read_b_eep(EEP_I2C_timeout+1)<<8)|Read_b_eep(EEP_I2C_timeout);
 	}
 	else
 	{
@@ -245,10 +249,10 @@ void UserInit(void)
 	SetTimer0();
 	I2C_Enable(1);
 	FL_FlashLED(0);
-
+/*
 	bTestFlow = 0;
 	testFlow = 0;//no test flow
-
+*/
 //	blinkStatusValid = FALSE;
 }//end UserInit
 
@@ -340,7 +344,6 @@ WORD_VAL ReadPOT(void)
 void ServiceRequests(void)
 {
 	BYTE index;
-	IIC_PACKET iic;
     unsigned int addr;
 
 	// Start Generic HID specific
@@ -459,15 +462,43 @@ void ServiceRequests(void)
 
 			case EEROM_32W:
 				addr = ((unsigned int)OUTPacket._byte[1]<<8)|OUTPacket._byte[2];
-				INPacket._byte[1] = EE_Write(addr,&OUTPacket._byte[3]);
-				counter=2;
+				INPacket._byte[1] = EE_Write(addr, &OUTPacket._byte[3], 32);
+				counter = 2;
 				break;
-				
+
 			case EEROM_32R:
 				addr = ((unsigned int)OUTPacket._byte[1]<<8)|OUTPacket._byte[2];
-				INPacket._byte[1] = 32;
-				counter = 34;			
-				if(EE_Read(addr,&INPacket._byte[2]) == 0) INPacket._byte[1] = 0;
+				if (EE_Read(addr, &INPacket._byte[2], 32))
+				{
+					INPacket._byte[1] = 32;
+					counter = 34;
+				}
+				else
+				{
+					INPacket._byte[1] = 0;
+					counter = 2;
+				}
+				break;
+
+			case EEROM_60W:
+				addr = ((unsigned int)OUTPacket._byte[1] << 8) | OUTPacket._byte[2];
+				INPacket._byte[1] = EE_Write(addr, &OUTPacket._byte[4], OUTPacket._byte[3]);
+				counter = 2;
+				break;
+
+			case EEROM_60R:
+				addr = ((unsigned int)OUTPacket._byte[1] << 8) | OUTPacket._byte[2];
+				counter = OUTPacket._byte[3];
+				if (EE_Read(addr, &INPacket._byte[2], counter))
+				{
+					INPacket._byte[1] = counter;
+					counter += 2;
+				}
+				else
+				{
+					INPacket._byte[1] = 0;
+					counter = 2;
+				}
 				break;
 
 			case I2C_Write:
@@ -478,7 +509,7 @@ void ServiceRequests(void)
 			case I2C_Read:
 				iic.adr = OUTPacket._byte[1];
 				iic.cmd = OUTPacket._byte[2];
-				iic.len = OUTPacket._byte[3];
+				iic.len = min(OUTPacket._byte[3], sizeof(iic.data));
 
 				counter = 2;
 
@@ -863,7 +894,7 @@ BOOL Transmit(void)
 		return 0;
 	}
 
-	for (i = 0; i < OUTPacket._byte[3]; i++)//tranlength
+	for (i = 0; i < min(OUTPacket._byte[3], USBGEN_EP_SIZE-4); i++)//tranlength
 	{
 		if (Write_BYTE_TO_I2C(OUTPacket._byte[4+i]) == 0)
 		{
@@ -928,7 +959,7 @@ BOOL Write_BYTE_TO_I2C(unsigned char data_out)
 /*****************************************************************************
 			EEPROM
 *****************************************************************************/
-BOOL EE_Write(unsigned int address,unsigned char* buf)
+BOOL EE_Write(unsigned int address,unsigned char* buf,BYTE len)
 {
 #if 1
 	BYTE i;
@@ -951,7 +982,7 @@ BOOL EE_Write(unsigned int address,unsigned char* buf)
 		I2C_Stop_IO();
 		return 0;
 	}
-	for(i=0;i<32;i++)
+	for(i=0;i<len;i++)
 	{
 		I2C_TX_IO(buf[i]);
 		if(I2C_Rec_Ack())
@@ -960,20 +991,20 @@ BOOL EE_Write(unsigned int address,unsigned char* buf)
 			return 0;
 		}
 	}
-	
+
 	I2C_Stop_IO();
 #else
-	BYTE i;	
+	BYTE i;
 	PIR2bits.BCLIF = 0;	//clear flag
 	I2C_Idle();
 	SSPCON2bits.SEN = 1;	//Start
-	while ( SSPCON2bits.SEN );      // wait until start condition is over 
-	
+	while ( SSPCON2bits.SEN );      // wait until start condition is over
+
 	if ( PIR2bits.BCLIF )       // test for bus collision
 	{
 		PIR2bits.BCLIF = 0;	//clear flag
 		I2C_Stop();
-		return 0;            // return with Bus Collision error 
+		return 0;            // return with Bus Collision error
 	}
 	// write ID
 	if(Write_BYTE_TO_I2C(0xA0) == 0)
@@ -994,7 +1025,7 @@ BOOL EE_Write(unsigned int address,unsigned char* buf)
 		return 0;
 	}
 	// page data write
-	for(i=0;i<32;i++)//
+	for(i=0;i<len;i++)//
 	{
 		if(Write_BYTE_TO_I2C(buf[i]) == 0)
 		{
@@ -1002,13 +1033,13 @@ BOOL EE_Write(unsigned int address,unsigned char* buf)
 			return 0;
 		}
 	}
-	
+
 	I2C_Stop();
-#endif	
+#endif
 	return 1;
 }
 
-BOOL EE_Read(unsigned int address,unsigned char* buf)
+BOOL EE_Read(unsigned int address,unsigned char* buf,BYTE len)
 {
 #if 1
 	BYTE i;
@@ -1031,7 +1062,7 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 		I2C_Stop_IO();
 		return 0;
 	}
-	
+
 	I2C_ReStart_IO();//Restart
 	I2C_TX_IO(0xA1);// device address read
 	if(I2C_Rec_Ack())
@@ -1040,11 +1071,11 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 		return 0;
 	}
 
-	// recevie data 
-	for(i=0;i<32;i++)
+	// recevie data
+	for(i=0;i<len;i++)
 	{
 		buf[i] = I2C_RX_IO();
-		if(i < 31)
+		if(i < len-1)
 		{
 			// return ack
 			I2C_Send_Ack(0);// ACK
@@ -1057,14 +1088,14 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 	PIR2bits.BCLIF = 0;	//clear flag
 	I2C_Idle();
 	SSPCON2bits.SEN = 1;	//Start
-	while ( SSPCON2bits.SEN );      // wait until start condition is over 
-	
+	while ( SSPCON2bits.SEN );      // wait until start condition is over
+
 	if ( PIR2bits.BCLIF )       // test for bus collision
 	{
 		//LATCbits.LATC2 = 0;
 		PIR2bits.BCLIF = 0;	//clear flag
 		I2C_Stop();
-		return 0;            // return with Bus Collision error 
+		return 0;            // return with Bus Collision error
 	}
 
 	if(Write_BYTE_TO_I2C(0xA0) == 0)
@@ -1087,26 +1118,26 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 	}
 	//=================================
 	SSPCON2bits.RSEN = 1;           // initiate bus restart condition
-	while ( SSPCON2bits.RSEN );  // wait until re-start condition is over 
-	
+	while ( SSPCON2bits.RSEN );  // wait until re-start condition is over
+
 	if ( PIR2bits.BCLIF )       // test for bus collision
 	{
 		PIR2bits.BCLIF = 0;	//clear flag
 		//LATCbits.LATC3 = 0;
 		I2C_Stop();
-		return 0;            // return with Bus Collision error 
+		return 0;            // return with Bus Collision error
 	}
-	
+
 	if(Write_BYTE_TO_I2C(0xA1) == 0)
 	{
 		I2C_Stop();
 		return 0;
 	}
-	
-	// recevie data 
-	for(i=0;i<32;i++)
+
+	// recevie data
+	for(i=0;i<len;i++)
 	{
-		//FL_DelayCnt(50);		
+		//FL_DelayCnt(50);
 		if(Read_BYTE_FROM_I2C(&buf[i]) == 0)
 		{
 			if(i2cHang)
@@ -1117,8 +1148,8 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 			I2C_Stop();
 			return 0;
 		}
-		
-		if(i < 31)
+
+		if(i < len-1)
 		{
 			// return ack
 			I2C_Ack();
@@ -1128,9 +1159,9 @@ BOOL EE_Read(unsigned int address,unsigned char* buf)
 	// last byte need to return nack
 	I2C_NotAck();
 	while ( SSPCON2bits.ACKEN ); // wait until ACK sequence is over
-	
+
 	I2C_Stop();
-#endif	
+#endif
 	return 1;
 }
 
