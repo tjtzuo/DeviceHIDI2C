@@ -94,6 +94,7 @@ typedef enum _TYPE_CMD
     I2C_BlockRead	= 0x44,
     I2C_WriteRead	= 0x45,
     I2C_Read2		= 0x46,
+    I2C_WriteF4		= 0x47,
 /*
 	IO_WR			= 0xF0,
 	IO_RD			= 0xF1,
@@ -178,8 +179,9 @@ void FL_FlashLED(BOOL bON);
 BOOL Get_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);
 BOOL Set_BlockCMD(IIC_PACKET* iic,BYTE cmd,BYTE len);
 void Set_InterCMD(IIC_PACKET* iic,BYTE cmd,unsigned int value);
-void Test_I2CFlow(void);
-BOOL IIC_GPIO_Read(IIC_PACKET* iic);
+//void Test_I2CFlow(void);
+//BOOL IIC_GPIO_Read(IIC_PACKET* iic);
+BOOL IIC_Write(IIC_PACKET* iic);
 BOOL IIC_Read(IIC_PACKET* iic);
 BOOL IIC_Read2(IIC_PACKET* iic);
 

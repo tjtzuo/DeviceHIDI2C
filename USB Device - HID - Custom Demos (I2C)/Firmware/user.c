@@ -510,15 +510,7 @@ void ServiceRequests(void)
 				iic.adr = OUTPacket._byte[1];
 				iic.cmd = OUTPacket._byte[2];
 				iic.len = min(OUTPacket._byte[3], sizeof(iic.data));
-
-				counter = 2;
-
-				if (IIC_Read(&iic) == 0)
-				{
-					// NACK
-					INPacket._byte[1] = 0;
-				}
-				else
+				if (IIC_Read(&iic))
 				{
 					INPacket._byte[1] = iic.len;
 					for (index = 0; index < iic.len; index++)
@@ -527,6 +519,24 @@ void ServiceRequests(void)
 					}
 					counter += iic.len;
 				}
+				else
+				{
+					// NACK
+					INPacket._byte[1] = 0;
+				}
+				counter = 2;
+				break;
+
+			case I2C_WriteF4:
+				iic.adr = 0x16;
+				iic.cmd = 0xF4;
+				iic.len = min(OUTPacket.len, sizeof(iic.data));
+				for (index = 0; index < iic.len; index++)
+				{
+					iic.data[index] = OUTPacket._byte[2 + index];
+				}
+				INPacket._byte[1] = IIC_Write(&iic);
+				counter = 2;
 				break;
 
 			case RESET:
