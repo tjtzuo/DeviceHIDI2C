@@ -164,10 +164,10 @@ IIC_PACKET;
 /** P U B L I C	 P R O T O T Y P E S *****************************************/
 void UserInit(void);
 void ProcessIO(void);
-
+/*
 unsigned char Read_b_eep( unsigned char badd );
 void Write_b_eep( unsigned char badd,unsigned char bdata );
-
+*/
 BOOL Transmit(void);
 BOOL Receive(void);
 BOOL Write_BYTE_TO_I2C(unsigned char data_out);

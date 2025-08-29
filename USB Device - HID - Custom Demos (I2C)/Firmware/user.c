@@ -47,6 +47,8 @@
 #include "HardwareProfile.h"
 #include "user.h"
 #include "protocol_io.h"
+#include <EEP.h>
+#include <flash.h>
 /*
 //#define SLAVE_ADDR	0x16
 #define SLAVE_ADDR	0xAA
@@ -56,10 +58,13 @@
 #define SBS_VOLT	0x08
 #define SBS_CURR	0x14
 */
+#define RECORD_ADDRESS	0x3F00
+
+#pragma romdata record = RECORD_ADDRESS
+ROM char rec_data[256] = { 0x12, 0x34 };
+
 /** V A R I A B L E S ********************************************************/
-#if defined(__18CXX)
-	#pragma udata
-#endif
+#pragma udata
 
 BYTE counter;
 BOOL blinkStatusValid = TRUE;
@@ -103,14 +108,12 @@ extern DATA_PACKET ToSendDataBuffer;
 
 /** PRIVATE PROTOTYPES *********************************************/
 void BlinkUSBStatus(void);
-WORD_VAL ReadPOT(void);
+//WORD_VAL ReadPOT(void);
 void ServiceRequests(void);
 
 
 /** D E C L A R A T I O N S **************************************************/
-#if defined(__18CXX)
-	#pragma code
-#endif
+#pragma code
 
 #define M_TMR0_ON	T0CONbits.TMR0ON = 1; // enable timer 0
 #define M_TMR0_OFF	T0CONbits.TMR0ON = 0; // disable timer 0
@@ -175,36 +178,43 @@ void SetT3(unsigned int time)
 }
 
 
+#ifndef __EEP_H
 /****************************************************************************
 			EEPROM
 ***************************************************************************/
 unsigned char Read_b_eep( unsigned char badd )
 {
 	EEADR = badd;
-	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
-	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.CFGS = 0;// Access EEPROM
+	EECON1bits.EEPGD = 0;// Access Flash Program or EEPROM
 	EECON1bits.RD = 1;// Read
+	Nop();							//Nop may be required for latency at high frequencies
+	Nop();							//Nop may be required for latency at high frequencies
 	return ( EEDATA );// return with read byte
 }
 
 void Write_b_eep( unsigned char badd,unsigned char bdata )
 {
+	unsigned char GIE_BIT_VAL = INTCONbits.GIE;
+
 	EEADR = badd;
 	EEDATA = bdata;
-	EECON1bits.CFGS = 0;// Access Flash Program or EEPROM
-	EECON1bits.EEPGD = 0;// Access EEPROM
+	EECON1bits.CFGS = 0;// Access EEPROM
+	EECON1bits.EEPGD = 0;// Access Flash Program or EEPROM
 	EECON1bits.WREN = 1;// Enable Write
 
 	INTCONbits.GIE = 0;// Disable All interrupt
 	EECON2 = 0x55;
 	EECON2 = 0xAA;
 	EECON1bits.WR = 1;
-	INTCONbits.GIE = 1;// Enable All interrupt
+//	INTCONbits.GIE = 1;// Enable All interrupt
 
-	while( EECON1bits.WR );
+	while( EECON1bits.WR );	//Wait till the write completion
 
+	INTCONbits.GIE = GIE_BIT_VAL;
 	EECON1bits.WREN = 0;//Disable Write
 }
+#endif
 
 
 /******************************************************************************
@@ -314,12 +324,10 @@ WORD_VAL ReadPOT(void)
 
 	w.Val = 0;
 
-	#if defined(__18CXX) || defined(__XC8)
-			ADCON0bits.GO = 1;			// Start AD conversion
-			while(ADCON0bits.GO);		// Wait for conversion
-			w.v[0] = ADRESL;
-			w.v[1] = ADRESH;
-	#endif
+	ADCON0bits.GO = 1;			// Start AD conversion
+	while(ADCON0bits.GO);		// Wait for conversion
+	w.v[0] = ADRESL;
+	w.v[1] = ADRESH;
 
 	return w;
 }//end ReadPOT
@@ -439,6 +447,45 @@ void ServiceRequests(void)
 				break;
 			}
 */
+			case READ_FLASH:
+				if (OUTPacket.len == 2)
+				{
+					counter = min(OUTPacket._byte[3], 60);
+					memcpypgm2ram(&INPacket._byte[2], (ROM FAR void*)&rec_data[OUTPacket._byte[2]], counter);
+					INPacket._byte[1] = counter;
+					counter += 2;
+				}
+				else
+				{
+					INPacket._byte[1] = 0;
+					counter = 2;
+				}	
+				break;
+
+			case WRITE_FLASH:
+				counter = OUTPacket._byte[3];
+				if (counter <= 60 && counter == OUTPacket.len - 2)
+				{
+					WriteBytesFlash(RECORD_ADDRESS + OUTPacket._byte[2], counter, &OUTPacket._byte[4]);
+					INPacket._byte[1] = 1;
+				}
+				else
+					INPacket._byte[1] = 0;
+				counter = 2;
+				break;
+
+			case ERASE_FLASH:
+				addr = OUTPacket._word[1];
+				if (OUTPacket.len == 2 && addr > RECORD_ADDRESS)
+				{
+					EraseFlash(addr,addr+1);
+					INPacket._byte[1] = 1;
+				}
+				else
+					INPacket._byte[1] = 0;
+				counter = 2;
+				break;
+
 			case READ_EEDATA:
 				if (OUTPacket.len == 1)
 				{

@@ -55,6 +55,8 @@ file_027=.
 file_028=.
 file_029=.
 file_030=.
+file_031=.
+file_032=.
 [GENERATED_FILES]
 file_000=no
 file_001=no
@@ -87,6 +89,8 @@ file_027=no
 file_028=no
 file_029=no
 file_030=no
+file_031=no
+file_032=no
 [OTHER_FILES]
 file_000=no
 file_001=no
@@ -119,6 +123,8 @@ file_027=no
 file_028=no
 file_029=no
 file_030=no
+file_031=no
+file_032=no
 [FILE_INFO]
 file_000=usb_descriptors.c
 file_001=main.c
@@ -150,7 +156,9 @@ file_026=HardwareProfile - LPC USB Development Kit - PIC18F14K50.h
 file_027=protocol_io.h
 file_028=C:\Program Files (x86)\Microchip\mplabc18\v3.47\h\pconfig.h
 file_029=C:\Program Files (x86)\Microchip\mplabc18\v3.47\h\i2c.h
-file_030=rm18f14k50.lkr
+file_030=C:\Program Files (x86)\Microchip\mplabc18\v3.47\h\flash.h
+file_031=C:\Program Files (x86)\Microchip\mplabc18\v3.47\h\EEP.h
+file_032=rm18f14k50.lkr
 [SUITE_INFO]
 suite_guid={5B7D72DD-9861-47BD-9F60-2BE967BF8416}
 suite_state=

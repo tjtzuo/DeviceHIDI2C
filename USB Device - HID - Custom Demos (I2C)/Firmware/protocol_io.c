@@ -6,9 +6,8 @@
 #include "HardwareProfile.h"
 #include "protocol_io.h"
 #include "user.h"
-#if defined(__18CXX)
-	#include <i2c.h>
-#endif
+#include <i2c.h>
+#include <EEP.h>
 
 /** V A R I A B L E S ********************************************************/
 #pragma udata
