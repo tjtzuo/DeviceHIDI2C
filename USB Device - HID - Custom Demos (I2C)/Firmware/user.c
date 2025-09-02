@@ -448,10 +448,10 @@ void ServiceRequests(void)
 			}
 */
 			case READ_FLASH:
-				if (OUTPacket.len == 2)
+				if (OUTPacket.len == 3)
 				{
-					counter = min(OUTPacket._byte[3], 60);
-					memcpypgm2ram(&INPacket._byte[2], (ROM FAR void*)&rec_data[OUTPacket._byte[2]], counter);
+					counter = min(OUTPacket._byte[4], 60);
+					memcpypgm2ram(&INPacket._byte[2], (ROM FAR void*)OUTPacket._word[1], counter);
 					INPacket._byte[1] = counter;
 					counter += 2;
 				}
@@ -466,7 +466,7 @@ void ServiceRequests(void)
 				counter = OUTPacket._byte[3];
 				if (counter <= 60 && counter == OUTPacket.len - 2)
 				{
-					WriteBytesFlash(RECORD_ADDRESS + OUTPacket._byte[2], counter, &OUTPacket._byte[4]);
+					WriteBytesFlash(RECORD_ADDRESS + OUTPacket._byte[2] * FLASH_ERASE_BLOCK, counter, &OUTPacket._byte[4]);
 					INPacket._byte[1] = 1;
 				}
 				else
@@ -476,9 +476,11 @@ void ServiceRequests(void)
 
 			case ERASE_FLASH:
 				addr = OUTPacket._word[1];
-				if (OUTPacket.len == 2 && addr > RECORD_ADDRESS)
+				if ((OUTPacket.len == 2) && (addr >= RECORD_ADDRESS) && ((addr % FLASH_ERASE_BLOCK) == 0))
 				{
-					EraseFlash(addr,addr+1);
+					EECON1bits.EEPGD = 1;	// point to Flash program memory
+					EECON1bits.CFGS = 0;	// access Flash program memory
+					EraseFlash(addr, addr + FLASH_ERASE_BLOCK - 1);
 					INPacket._byte[1] = 1;
 				}
 				else
